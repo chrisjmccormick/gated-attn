@@ -169,6 +169,7 @@ class MultiheadLatentAttention(nn.Module):
 
         # The gate matrix will need to be the same size as the value matrix.
         self.g_private_dim = config.vo_private_dim
+        self.enable_gate_projection = config.enable_gate_projection
 
         self.hidden_size = config.hidden_size
 
@@ -186,12 +187,20 @@ class MultiheadLatentAttention(nn.Module):
             # No latent projections.
             self.latent_spaces = False
 
-            # Define the standard QKV projection
-            self.qkvg_proj = nn.Linear(
-                config.hidden_size,
-                self.num_heads * (self.qk_private_dim * 2 + self.vo_private_dim + self.g_private_dim),
-                bias=config.attention_bias,
-            )
+            if self.enable_gate_projection:
+                # Define the standard QKV projection
+                self.qkvg_proj = nn.Linear(
+                    config.hidden_size,
+                    self.num_heads * (self.qk_private_dim * 2 + self.vo_private_dim + self.g_private_dim),
+                    bias=config.attention_bias,
+                )
+            else:
+                # Define the standard QKV projection
+                self.qkv_proj = nn.Linear(
+                    config.hidden_size,
+                    self.num_heads * (self.qk_private_dim * 2 + self.vo_private_dim),
+                    bias=config.attention_bias,
+                )
 
             # Dense output projection
             self.o_proj = nn.Linear(
@@ -297,12 +306,15 @@ class MultiheadLatentAttention(nn.Module):
                 bias=False,
             )
 
-            # Gate heads, same size as value head
-            self.g_private_proj = nn.Linear(
-                config.hidden_size,
-                self.num_heads * self.g_private_dim,
-                bias=False,
-            )
+            # Gate heads, same size as value head (only if gate projection is enabled)
+            if self.enable_gate_projection:
+                self.g_private_proj = nn.Linear(
+                    config.hidden_size,
+                    self.num_heads * self.g_private_dim,
+                    bias=False,
+                )
+            else:
+                self.g_private_proj = None
 
             # Use output subspace if o_shared_dim is specified
             self.output_subspace = config.o_shared_dim is not None
@@ -451,16 +463,17 @@ class MultiheadLatentAttention(nn.Module):
             #     keysvalues [B, T, 2*H*Dh]
             keysvalues = self.kv_private_proj(kv_shared)
 
-            # Project hidden states onto gate heads.
-            # Input:
-            #     hidden_states [B, T, D]
-            #     g_private_proj [D, H*Dg]
-            # Output:
-            #     gates [B, T, H*Dg]
-            gates = self.g_private_proj(hidden_states)
+            # Project hidden states onto gate heads (if enabled).
+            if self.enable_gate_projection:
+                # Input:
+                #     hidden_states [B, T, D]
+                #     g_private_proj [D, H*Dg]
+                # Output:
+                #     gates [B, T, H*Dg]
+                gates = self.g_private_proj(hidden_states)
 
-            # Apply Swish activation to gates.
-            gates = F.silu(gates)
+                # Apply Swish activation to gates.
+                gates = F.silu(gates)
 
             # Split into key and value tensors
             # Each: [B, T, H * Dh]
@@ -474,14 +487,14 @@ class MultiheadLatentAttention(nn.Module):
             #     values [B, T, H*Dv]
             values = values * gates
 
-        # If this is a dense attention layer (no latent projections),
-        else:
+        # Otherwise, if dense with gates,
+        elif self.enable_gate_projection:
 
             # ====================
-            #     Standard MHA
+            #     Gated MHA
             # ====================
 
-            # Standard QKV projection
+            # Gated QKV projection
             # Input:
             #   hidden_states     [B, T, D]
             #         qkvg_proj    [D, 4*H*Dh]
@@ -503,6 +516,21 @@ class MultiheadLatentAttention(nn.Module):
             # Output:
             #     values [B, T, H*Dv]
             values = values * gates
+
+        # Otherwise, standard MHA
+        else:
+
+            # Standard QKV projection
+            # Input:
+            #   hidden_states     [B, T, D]
+            #         qkv_proj    [D, 3*H*Dh]
+            # Output:
+            #   querieskeysvalues [B, T, 3*H*Dh]
+            querieskeysvalues = self.qkv_proj(hidden_states)
+            
+            # Separate query, key, and value vectors
+            # Each: [B, T, H * Dh]
+            queries, keys, values = querieskeysvalues.chunk(3, dim=-1)
 
         # Split up queries so that there's just one per row.
         # Same for keys and values.

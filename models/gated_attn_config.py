@@ -200,6 +200,9 @@ class GatedAttnDecoderConfig(PretrainedConfig):
         # === Decomposed MLP ===
         ffn_decompose=False,
         ffn_rank=None,
+        
+        # === Gate Projection ===
+        enable_gate_projection=True,
         **kwargs
     ) -> None:
         super().__init__(**kwargs)
@@ -244,6 +247,9 @@ class GatedAttnDecoderConfig(PretrainedConfig):
         # === Decomposed FFN ===
         self.ffn_decompose = ffn_decompose
         self.ffn_rank = ffn_rank
+
+        # === Gate Projection ===
+        self.enable_gate_projection = enable_gate_projection
 
         # === Attention backend ===
         self.attention_backend = attention_backend
