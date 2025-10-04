@@ -47,8 +47,8 @@ print("PROJECT_ROOT", PROJECT_ROOT)
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from models.shared_space_config import SharedSpaceDecoderConfig, get_config
-from layers.task_heads import SharedSpaceDecoderForCausalLM
+from models.gated_attn_config import GatedAttnDecoderConfig, get_config
+from layers.task_heads import GatedAttnDecoderForCausalLM
 
 import torch.nn as nn
 
@@ -236,7 +236,7 @@ def main(config_path: str):
 
     print("Initializing model...")
 
-    model = SharedSpaceDecoderForCausalLM(model_cfg)
+    model = GatedAttnDecoderForCausalLM(model_cfg)
 
     # ================================
     #       Review Configuration

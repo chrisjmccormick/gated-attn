@@ -9,15 +9,10 @@
     "num_hidden_layers":    6,
     "intermediate_size":    672,
         
-<<<<<<< Updated upstream:subspace_decoder/configs/tiny_mla_wiki103.json
     "vocab_size":               50257,
     "tie_word_embeddings":      true,
     "max_position_embeddings":  128,
-=======
-    "vocab_size":           50257,
-    "max_position_embeddings":  1024,
->>>>>>> Stashed changes:subspace_decoder/configs/gpt-2_mla_c4.json
-
+    
     "norm_type":            "rmsnorm",
     "layer_norm_eps":       1e-12,
     "rms_norm_eps":         1e-6,

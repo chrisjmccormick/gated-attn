@@ -18,10 +18,10 @@ Norms:
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from models.shared_space_config import SharedSpaceDecoderConfig
+from models.gated_attn_config import GatedAttnDecoderConfig
 
 
-def create_norm_layer(hidden_size: int, config: SharedSpaceDecoderConfig) -> nn.Module:
+def create_norm_layer(hidden_size: int, config: GatedAttnDecoderConfig) -> nn.Module:
     """
     Create a normalization layer based on the config norm_type.
     
@@ -60,7 +60,7 @@ class DeepseekV3RMSNorm(nn.Module):
 
 class SubspaceFeedForward(nn.Module):
     """
-    Feed-forward block for SharedSpaceDecoder.
+    Feed-forward block for GatedAttnDecoder.
 
     Implements SwiGLU:
         FFN(x) = W_out( Swish(W_in(x)) ⊙ W_gate(x) ) + residual

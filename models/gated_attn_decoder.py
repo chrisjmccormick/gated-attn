@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-"""# shared_subspace_encoder.py"""
+"""# gated_attn_decoder.py"""
 
 from typing import Optional
 
@@ -13,7 +13,7 @@ from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask_for
 
 from layers.mla import MultiheadLatentAttention, RotaryEmbedding
 from layers.feedforward import SubspaceFeedForward
-from models.shared_space_config import SharedSpaceDecoderConfig
+from models.gated_attn_config import GatedAttnDecoderConfig
 
 """`RMSNorm`
 
@@ -39,7 +39,7 @@ class DeepseekV3RMSNorm(nn.Module):
         hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
         return self.weight * hidden_states.to(input_dtype)
 
-def create_norm_layer(hidden_size: int, config: SharedSpaceDecoderConfig) -> nn.Module:
+def create_norm_layer(hidden_size: int, config: GatedAttnDecoderConfig) -> nn.Module:
     """
     Create a normalization layer based on the config norm_type.
     
@@ -60,7 +60,7 @@ def create_norm_layer(hidden_size: int, config: SharedSpaceDecoderConfig) -> nn.
 
 """#### *PreTrainedModel"""
 
-class SharedSpaceDecoderPreTrainedModel(PreTrainedModel):
+class GatedAttnDecoderPreTrainedModel(PreTrainedModel):
     """
     The **PreTrainedModel object:
       - Is instantiated when TODO
@@ -70,7 +70,7 @@ class SharedSpaceDecoderPreTrainedModel(PreTrainedModel):
       - Executes TODO
     """
 
-    config_class = SharedSpaceDecoderConfig
+    config_class = GatedAttnDecoderConfig
     base_model_prefix = "model"
 
     def _init_weights(self, module: nn.Module) -> None:
@@ -116,10 +116,10 @@ class SharedSpaceDecoderPreTrainedModel(PreTrainedModel):
 
 """#### `*Layer`"""
 
-class SharedSpaceDecoderLayer(nn.Module):
+class GatedAttnDecoderLayer(nn.Module):
     """
     The **Layer object:
-      - Is instantiated by :class:`SharedSpaceDecoderModel` for each
+      - Is instantiated by :class:`GatedAttnDecoderModel` for each
         Transformer block in the decoder.
       - Initializes:
         - ``self_attn`` – multi-head latent attention implementing either
@@ -131,7 +131,7 @@ class SharedSpaceDecoderLayer(nn.Module):
       - Executes a single decoder block in :meth:`forward`.
     """
 
-    def __init__(self, config: SharedSpaceDecoderConfig, layer_idx: int) -> None:
+    def __init__(self, config: GatedAttnDecoderConfig, layer_idx: int) -> None:
 
         super().__init__()
 
@@ -191,7 +191,7 @@ class SharedSpaceDecoderLayer(nn.Module):
 
 """#### *Model"""
 
-class SharedSpaceDecoderModel(SharedSpaceDecoderPreTrainedModel):
+class GatedAttnDecoderModel(GatedAttnDecoderPreTrainedModel):
     """
     The **Model object:
       - Initializes:
@@ -205,7 +205,7 @@ class SharedSpaceDecoderModel(SharedSpaceDecoderPreTrainedModel):
       Use SubspaceDecoderForCausalLM for language modeling tasks.
     """
 
-    def __init__(self, config: SharedSpaceDecoderConfig) -> None:
+    def __init__(self, config: GatedAttnDecoderConfig) -> None:
         super().__init__(config)
 
         # ============================
@@ -264,7 +264,7 @@ class SharedSpaceDecoderModel(SharedSpaceDecoderPreTrainedModel):
         for i in range(config.num_hidden_layers):
             # Create a **Layer, providing the config and indicating its number.
             layers.append(
-                SharedSpaceDecoderLayer(
+                GatedAttnDecoderLayer(
                     config,
                     layer_idx = i
                 )

@@ -12,10 +12,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Optional
 
-from models.shared_space_config import SharedSpaceDecoderConfig
+from models.gated_attn_config import GatedAttnDecoderConfig
 
 
-def create_norm_layer(hidden_size: int, config: SharedSpaceDecoderConfig) -> nn.Module:
+def create_norm_layer(hidden_size: int, config: GatedAttnDecoderConfig) -> nn.Module:
     """
     Create a normalization layer based on the config norm_type.
 
@@ -70,7 +70,7 @@ def rotate_half(x):
 class RotaryEmbedding(nn.Module):
     """Precompute RoPE embeddings and store them as buffers."""
 
-    def __init__(self, config: SharedSpaceDecoderConfig) -> None:
+    def __init__(self, config: GatedAttnDecoderConfig) -> None:
         super().__init__()
 
         dim = config.rope_dims
@@ -92,11 +92,6 @@ class RotaryEmbedding(nn.Module):
         if config.rope_scaling is not None:
             scaling_type = config.rope_scaling.get("type", "linear")
             scaling_factor = config.rope_scaling.get("factor", 1.0)
-<<<<<<< Updated upstream
-
-=======
-            
->>>>>>> Stashed changes
             if scaling_type == "linear":
                 # Linear scaling: divide frequencies by scaling factor
                 inv_freq = inv_freq / scaling_factor
@@ -150,7 +145,7 @@ class MultiheadLatentAttention(nn.Module):
     - Optional output subspace
     """
 
-    def __init__(self, config: SharedSpaceDecoderConfig, layer_idx: int):
+    def __init__(self, config: GatedAttnDecoderConfig, layer_idx: int):
         super().__init__()
 
         self.config = config
@@ -172,6 +167,9 @@ class MultiheadLatentAttention(nn.Module):
         self.qk_private_dim = config.qk_private_dim
         self.vo_private_dim = config.vo_private_dim
 
+        # The gate matrix will need to be the same size as the value matrix.
+        self.g_private_dim = config.vo_private_dim
+
         self.hidden_size = config.hidden_size
 
         # =========================
@@ -189,9 +187,9 @@ class MultiheadLatentAttention(nn.Module):
             self.latent_spaces = False
 
             # Define the standard QKV projection
-            self.qkv_proj = nn.Linear(
+            self.qkvg_proj = nn.Linear(
                 config.hidden_size,
-                self.num_heads * (self.qk_private_dim * 2 + self.vo_private_dim),
+                self.num_heads * (self.qk_private_dim * 2 + self.vo_private_dim + self.g_private_dim),
                 bias=config.attention_bias,
             )
 
@@ -213,34 +211,17 @@ class MultiheadLatentAttention(nn.Module):
             self.latent_spaces = True
 
             # Input latent projections
-<<<<<<< Updated upstream
-            
-            # If we're using a shared query subspace,
-            if config.q_shared_dim is not None:
-                # Set a flag that we'll check in `forward`.
-                self.query_shared = True
-
-=======
 
             # If we're using a shared query subspace,
             if config.q_shared_dim is not None:
                 # Set a flag that we'll check in `forward`.
                 self.query_shared = True
 
->>>>>>> Stashed changes
                 self.q_shared_proj = nn.Linear(
                     config.hidden_size,
                     self.q_shared_dim,
                     bias=config.attention_bias,
                 )
-<<<<<<< Updated upstream
-                
-                self.q_shared_norm = create_norm_layer(self.q_shared_dim, config)               
-                
-            else:
-                # Set a flag that we'll check in `forward`.
-                self.query_shared = False
-=======
             else:
                 # Set a flag that we'll check in `forward`.
                 self.query_shared = False
@@ -258,17 +239,17 @@ class MultiheadLatentAttention(nn.Module):
                     self.kv_shared_dim,
                     bias=config.attention_bias,
                 )
+
+                # Normalize the latents (this handles `None` as well)
+                self.q_shared_norm = create_norm_layer(self.q_shared_dim, config)
+                self.kv_shared_norm = create_norm_layer(self.kv_shared_dim, config)
+
             else:
                 # Set a flag that we'll check in `forward`.
                 self.keyvalue_shared = False
 
                 # Use identity.
                 self.kv_shared_proj = nn.Identity()
-
-            # Normalize the latents (this handles `None` as well)
-            self.q_shared_norm = create_norm_layer(self.q_shared_dim, config)
-            self.kv_shared_norm = create_norm_layer(self.kv_shared_dim, config)
->>>>>>> Stashed changes
 
                 self.q_shared_dim = config.hidden_size
                 
@@ -309,10 +290,17 @@ class MultiheadLatentAttention(nn.Module):
                 bias=False # TODO
             )
 
-            # Key and Value heads, concatenated
+            # Key, Value heads, concatenated
             self.kv_private_proj = nn.Linear(
                 self.kv_shared_dim,
                 self.num_heads * (self.qk_private_dim + self.vo_private_dim),
+                bias=False,
+            )
+
+            # Gate heads, same size as value head
+            self.g_private_proj = nn.Linear(
+                config.hidden_size,
+                self.num_heads * self.g_private_dim,
                 bias=False,
             )
 
@@ -391,7 +379,7 @@ class MultiheadLatentAttention(nn.Module):
         H = self.num_heads
         Dq = self.qk_private_dim     # per-head dim for Q and K
         Dv = self.vo_private_dim     # per-head dim for V/O
-
+        Dg = self.g_private_dim     # per-head dim for G
         Dc_q, Dc_kv = self.q_shared_dim, self.kv_shared_dim
 
         # ==============================
@@ -463,9 +451,28 @@ class MultiheadLatentAttention(nn.Module):
             #     keysvalues [B, T, 2*H*Dh]
             keysvalues = self.kv_private_proj(kv_shared)
 
+            # Project hidden states onto gate heads.
+            # Input:
+            #     hidden_states [B, T, D]
+            #     g_private_proj [D, H*Dg]
+            # Output:
+            #     gates [B, T, H*Dg]
+            gates = self.g_private_proj(hidden_states)
+
+            # Apply Swish activation to gates.
+            gates = F.silu(gates)
+
             # Split into key and value tensors
             # Each: [B, T, H * Dh]
             keys, values = keysvalues.chunk(2, dim=-1)
+
+            # Apply gate activations to values with haddamard product.
+            # Input:
+            #     gates [B, T, H*Dg]
+            #     values [B, T, H*Dv]
+            # Output:
+            #     values [B, T, H*Dv]
+            values = values * gates
 
         # If this is a dense attention layer (no latent projections),
         else:
@@ -477,14 +484,25 @@ class MultiheadLatentAttention(nn.Module):
             # Standard QKV projection
             # Input:
             #   hidden_states     [B, T, D]
-            #         qkv_proj    [D, 3*H*Dh]
+            #         qkvg_proj    [D, 4*H*Dh]
             # Output:
-            #   querieskeysvalues [B, T, 3*H*Dh]
-            querieskeysvalues = self.qkv_proj(hidden_states)
+            #   querieskeysvaluesgates [B, T, 4*H*Dh]
+            querieskeysvaluesgates = self.qkvg_proj(hidden_states)
 
             # Separate query, key, and value vectors
             # Each: [B, T, H * Dh]
-            queries, keys, values = querieskeysvalues.chunk(3, dim=-1)
+            queries, keys, values, gates = querieskeysvaluesgates.chunk(4, dim=-1)
+
+            # Apply SiLU activation to gates.
+            gates = F.silu(gates)
+
+            # Apply gate activations to values with haddamard product.
+            # Input:
+            #     gates [B, T, H*Dg]
+            #     values [B, T, H*Dv]
+            # Output:
+            #     values [B, T, H*Dv]
+            values = values * gates
 
         # Split up queries so that there's just one per row.
         # Same for keys and values.

@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,14 +5,14 @@ from typing import Optional, Union
 
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from models.shared_space_config import SharedSpaceDecoderConfig
-from models.shared_space_decoder import (
-    SharedSpaceDecoderPreTrainedModel,
-    SharedSpaceDecoderModel,
+from models.gated_attn_config import GatedAttnDecoderConfig
+from models.gated_attn_decoder import (
+    GatedAttnDecoderPreTrainedModel,
+    GatedAttnDecoderModel,
     DeepseekV3RMSNorm
 )
 
-def create_norm_layer(hidden_size: int, config: SharedSpaceDecoderConfig) -> nn.Module:
+def create_norm_layer(hidden_size: int, config: GatedAttnDecoderConfig) -> nn.Module:
     """
     Create a normalization layer based on the config norm_type.
     
@@ -27,18 +26,18 @@ def create_norm_layer(hidden_size: int, config: SharedSpaceDecoderConfig) -> nn.
     if config.norm_type == "layernorm":
         return nn.LayerNorm(hidden_size, eps=config.layer_norm_eps)
     elif config.norm_type == "rmsnorm":
-        from models.shared_space_decoder import DeepseekV3RMSNorm
+        from models.gated_attn_decoder import DeepseekV3RMSNorm
         return DeepseekV3RMSNorm(hidden_size, eps=config.rms_norm_eps)
     else:
         # This should be caught by config validation, but being defensive
         raise ValueError(f"Unknown norm_type: {config.norm_type}")
 
 
-class SharedSpaceDecoderForCausalLM(SharedSpaceDecoderPreTrainedModel):
+class GatedAttnDecoderForCausalLM(GatedAttnDecoderPreTrainedModel):
     """
     Subspace Decoder model with a causal language modeling head.
     
-    This model extends the SharedSpaceDecoderModel with:
+    This model extends the GatedAttnDecoderModel with:
     - A language modeling head that projects hidden states to vocabulary logits
     - Support for computing cross-entropy loss for language modeling
     - Proper HuggingFace compatibility for causal language modeling tasks
@@ -50,11 +49,11 @@ class SharedSpaceDecoderForCausalLM(SharedSpaceDecoderPreTrainedModel):
     - Fine-tuning on downstream tasks
     """
 
-    def __init__(self, config: SharedSpaceDecoderConfig) -> None:
+    def __init__(self, config: GatedAttnDecoderConfig) -> None:
         super().__init__(config)
         
         # Initialize the base decoder model
-        self.model = SharedSpaceDecoderModel(config)
+        self.model = GatedAttnDecoderModel(config)
         
         # Final layer norm before the language modeling head
         self.norm = create_norm_layer(config.hidden_size, config)

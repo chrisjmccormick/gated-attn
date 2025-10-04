@@ -1,4 +1,4 @@
-"""# `shared_space_config.py`
+"""# `gated_attn_config.py`
 
 #### `*Config`
 """
@@ -78,9 +78,9 @@ def make_shorthand(model_cfg):
     return shorthand
 
 
-class SharedSpaceDecoderConfig(PretrainedConfig):
+class GatedAttnDecoderConfig(PretrainedConfig):
     r"""
-    Configuration class for SharedSpaceDecoderConfig.
+    Configuration class for GatedAttnDecoderConfig.
 
     Extends the HuggingFace `PretrainedConfig` to support architectural
     variations including:
@@ -303,7 +303,7 @@ def get_config(filename):
     # Strict key check on the model configuration.
 
     # Get the list of keys allowed / required by `*Config`
-    valid_keys = SharedSpaceDecoderConfig.__init__.__code__.co_varnames
+    valid_keys = GatedAttnDecoderConfig.__init__.__code__.co_varnames
     # Remove `self` and `kwargs`
     valid_keys = set(valid_keys) - {"self", "kwargs"}
 
@@ -324,6 +324,6 @@ def get_config(filename):
     # Will raise TypeError, by design, if required args are missing
     # The asterisks unpack the dictionary into a list of keywords as though
     # all of the settings were writting out individually.
-    model_cfg = SharedSpaceDecoderConfig(**full_cfg["model"])
+    model_cfg = GatedAttnDecoderConfig(**full_cfg["model"])
 
     return full_cfg, model_cfg
